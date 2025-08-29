@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>555330937820-478nhlh1pa4f33ap500ba7jnf1r9vgu1.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.555330937820-478nhlh1pa4f33ap500ba7jnf1r9vgu1</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>555330937820-m79890qe9gprsae57oepfcmmeh2t888m.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBzu3GrHxEYtJ8-Y-Ay6kUrE3Nw1VAxn9A</string>
+	<key>GCM_SENDER_ID</key>
+	<string>555330937820</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.samerygym.tech</string>
+	<key>PROJECT_ID</key>
+	<string>smaer-gym-latest</string>
+	<key>STORAGE_BUCKET</key>
+	<string>smaer-gym-latest.appspot.com</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:555330937820:ios:3a216c059120ad16c82519</string>
+</dict>
+</plist>

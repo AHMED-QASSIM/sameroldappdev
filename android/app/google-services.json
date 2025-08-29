@@ -1,0 +1,62 @@
+{
+  "project_info": {
+    "project_number": "555330937820",
+    "project_id": "smaer-gym-latest",
+    "storage_bucket": "smaer-gym-latest.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:555330937820:android:7732ec38e6e3a213c82519",
+        "android_client_info": {
+          "package_name": "com.samerygym.tech"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "555330937820-m79890qe9gprsae57oepfcmmeh2t888m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.samerygym.tech",
+            "certificate_hash": "a0eb36662050fb4a3bd6481c2958c864e4e51af5"
+          }
+        },
+        {
+          "client_id": "555330937820-n3gb76pvnpuaeasocqsarn6p5rj9v8ul.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.samerygym.tech",
+            "certificate_hash": "19a9ced00929f0401b45b5cc20d39d0e97357a77"
+          }
+        },
+        {
+          "client_id": "555330937820-vq57dh7shbl3bcbcv3qqetr8t1alaco2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXv_HRX7x6hrf_npXrzUTxbXd23RZnDE4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "555330937820-vq57dh7shbl3bcbcv3qqetr8t1alaco2.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "555330937820-478nhlh1pa4f33ap500ba7jnf1r9vgu1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.samerygym.tech"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
