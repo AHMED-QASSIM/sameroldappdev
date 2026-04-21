@@ -43,6 +43,7 @@ class AuthController extends GetxController {
       required String email,
       required String password}) async {
     loadregister.value = true;
+    Get.find<UserController>().clearUser();
 
     await FirebaseAuth.instance
         .createUserWithEmailAndPassword(
@@ -73,9 +74,8 @@ class AuthController extends GetxController {
                     .then((value) async {
                   var checkADmin = await AuthServices().checkAdmin(phone);
 
+                  await Get.find<UserController>().getUser();
                   Get.offAll(checkADmin ? AdminDashboard() : Dashboard());
-
-                  Get.find<UserController>().getUser();
                   loadregister.value = false;
                 });
               });
@@ -96,54 +96,55 @@ class AuthController extends GetxController {
     });
   }
 
-void login({required String email, required String password}) async {
-  loadlogin.value = true;
-  print("cred");
-  print(email);
-  print(password);
+  void login({required String email, required String password}) async {
+    loadlogin.value = true;
+    Get.find<UserController>().clearUser();
+    print("cred");
+    print(email);
+    print(password);
 
-  // ✅ Special condition for employee
-  if (email == "employee" && password == "samer@123") {
-    loadlogin.value = false;
-    Get.offAll(() => Chats()); // replace with your page widget
-    return;
-  }
-
-  await FirebaseAuth.instance
-      .signInWithEmailAndPassword(
-          email: email + "@gmail.com", password: password)
-      .then((cred) async {
-    print(cred);
-
-    if (cred.user != null) {
-      await subscribeToNPhoneNotification(cred.user!.uid);
-
-      AuthServices()
-          .checkRegister(await AuthServices().getUserPhone(cred.user!.uid))
-          .then((v) async {
-        if (!v) {
-          loadlogin.value = false;
-          FirebaseAuth.instance.signOut();
-          Get.snackbar("خطأ", "قم بأنشاء حساب اولا",
-              snackPosition: SnackPosition.BOTTOM, margin: EdgeInsets.all(20));
-        } else {
-          var checkADmin = await AuthServices()
-              .checkAdmin(await AuthServices().getUserPhone(cred.user!.uid));
-
-          Get.offAll(checkADmin ? AdminDashboard() : Dashboard());
-          loadlogin.value = false;
-          Get.find<UserController>().getUser();
-        }
-      });
+    // ✅ Special condition for employee
+    if (email == "employee" && password == "samer@123") {
+      loadlogin.value = false;
+      Get.offAll(() => Chats()); // replace with your page widget
+      return;
     }
-  }).catchError((onError) {
-    print('thie erorrr');
-    print(onError);
-    loadlogin.value = false;
-    print('thie erorrr');
-  });
-}
 
+    await FirebaseAuth.instance
+        .signInWithEmailAndPassword(
+            email: email + "@gmail.com", password: password)
+        .then((cred) async {
+      print(cred);
+
+      if (cred.user != null) {
+        await subscribeToNPhoneNotification(cred.user!.uid);
+
+        AuthServices()
+            .checkRegister(await AuthServices().getUserPhone(cred.user!.uid))
+            .then((v) async {
+          if (!v) {
+            loadlogin.value = false;
+            FirebaseAuth.instance.signOut();
+            Get.snackbar("خطأ", "قم بأنشاء حساب اولا",
+                snackPosition: SnackPosition.BOTTOM,
+                margin: EdgeInsets.all(20));
+          } else {
+            var checkADmin = await AuthServices()
+                .checkAdmin(await AuthServices().getUserPhone(cred.user!.uid));
+
+            await Get.find<UserController>().getUser();
+            Get.offAll(checkADmin ? AdminDashboard() : Dashboard());
+            loadlogin.value = false;
+          }
+        });
+      }
+    }).catchError((onError) {
+      print('thie erorrr');
+      print(onError);
+      loadlogin.value = false;
+      print('thie erorrr');
+    });
+  }
 
   void checkOtp({smsCode, imageFile, imageType, name}) async {
     loadregister.value = true;
@@ -220,9 +221,9 @@ void login({required String email, required String password}) async {
             var checkADmin =
                 await AuthServices().checkAdmin(cred.user!.phoneNumber!);
 
+            await Get.find<UserController>().getUser();
             Get.offAll(checkADmin ? AdminDashboard() : Dashboard());
             loadlogin.value = false;
-            Get.find<UserController>().getUser();
           }
         });
       }

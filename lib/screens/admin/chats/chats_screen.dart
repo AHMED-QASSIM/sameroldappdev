@@ -99,6 +99,7 @@ class _ChatsState extends State<Chats> {
                       ),
                     ),
                     onPressed: () async {
+                      Get.find<UserController>().clearUser();
                       FirebaseAuth.instance.signOut().then((value) {
                         Get.offAll(LoginScreen());
                       });
@@ -187,7 +188,7 @@ class _ChatsState extends State<Chats> {
 
     return InkWell(
       onTap: () {
-         print("chatModel");
+        print("chatModel");
         print(chatModel.last_message);
         Get.to(() => ChatPage(chatModel: chatModel));
       },

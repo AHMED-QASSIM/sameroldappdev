@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -26,6 +27,7 @@ import 'package:smaergym/core/controllers/user_controller.dart';
 import 'package:smaergym/core/controllers/user_courses_controller.dart';
 import 'package:smaergym/core/models/chat_model.dart';
 import 'package:smaergym/core/models/user_model.dart';
+import 'package:smaergym/core/widgets/custom_button.dart';
 import 'package:smaergym/core/widgets/no_data_widget.dart';
 import 'package:smaergym/screens/chat/AudioRecorder.dart';
 import 'package:smaergym/screens/chat/chat_puple.dart';
@@ -51,8 +53,9 @@ class _ChatDetailPageState extends State<ChatPage> {
   TextEditingController message = TextEditingController();
   ScrollController _scrollController = new ScrollController();
   ChatsController chatsController = Get.put(ChatsController());
-  
-  UserCoursesController userCoursesController = Get.put(UserCoursesController());
+
+  UserCoursesController userCoursesController =
+      Get.put(UserCoursesController());
 
   UserController userController = Get.find();
   late String pathToAudio;
@@ -61,6 +64,10 @@ class _ChatDetailPageState extends State<ChatPage> {
   String? audioPath;
   bool isRecoring = false;
   var recordTime = null;
+  bool _chatIdentityError = false;
+  String _chatIdentityErrorMessage =
+      "حدث خطأ في فتح المحادثة. يرجى تحديث الصفحة والمحاولة مرة اخرى.";
+  bool _identityDialogShown = false;
 
 // final _key = GlobalKey<ExpandableFabState>();
   final ImagePicker _picker = ImagePicker();
@@ -96,8 +103,10 @@ class _ChatDetailPageState extends State<ChatPage> {
               imageType: p.extension(value.path));
         } else {
           UserModel user = Get.find<UserController>().user.value;
+          final ownerId = _chatOwnerId();
+          if (ownerId == null) return;
           chatsController.addChat(
-              user.id,
+              ownerId,
               user.name,
               user.image,
               user.phone,
@@ -146,8 +155,10 @@ class _ChatDetailPageState extends State<ChatPage> {
             fileName: extention);
       } else {
         UserModel user = Get.find<UserController>().user.value;
+        final ownerId = _chatOwnerId();
+        if (ownerId == null) return;
         chatsController.addChat(
-            user.id,
+            ownerId,
             user.name,
             user.image,
             user.phone,
@@ -169,21 +180,83 @@ class _ChatDetailPageState extends State<ChatPage> {
     );
   }
 
+  String? _chatOwnerId() {
+    if (widget.chatModel != null) {
+      return widget.chatModel!.user;
+    }
+
+    final authUser = FirebaseAuth.instance.currentUser;
+    final loadedUserId = userController.user.value.id;
+
+    if (authUser == null) {
+      _showChatIdentityError(
+          "انتهت جلسة الدخول. يرجى تسجيل الدخول مرة اخرى ثم تحديث المحادثة.");
+      return null;
+    }
+
+    if (loadedUserId != null && loadedUserId != authUser.uid) {
+      _showChatIdentityError(
+          "تعذر التأكد من حسابك الحالي. يرجى تحديث الصفحة قبل فتح المحادثة.");
+      return null;
+    }
+
+    return authUser.uid;
+  }
+
+  void _showChatIdentityError(String messageText) {
+    chatsController.stopMessages();
+    if (!mounted) return;
+    setState(() {
+      _chatIdentityError = true;
+      _chatIdentityErrorMessage = messageText;
+    });
+
+    if (_identityDialogShown) return;
+    _identityDialogShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Get.dialog(
+        AlertDialog(
+          title: Text("تعذر فتح المحادثة"),
+          content: Text(messageText),
+          actions: [
+            TextButton(
+              onPressed: () => Get.back(),
+              child: Text("حسنا"),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Future<void> _refreshChat() async {
+    setState(() {
+      _chatIdentityError = false;
+      _identityDialogShown = false;
+    });
+    if (widget.chatModel == null) {
+      await userController.getUser();
+    }
+    final ownerId = _chatOwnerId();
+    if (ownerId != null) {
+      chatsController.getMessages(ownerId);
+    }
+  }
+
   @override
   void initState() {
+    super.initState();
     // TODO: implement initState
     showPlayer = false;
-    if (widget.chatModel != null) {
-      chatsController.getMessages(widget.chatModel!.user!);
-    } else {
-      chatsController.getMessages(userController.user.value.id);
+    final ownerId = _chatOwnerId();
+    if (ownerId != null) {
+      chatsController.getMessages(ownerId);
     }
 
     if (widget.chatModel != null && userController.user.value.admin == true) {
       chatsController.readMeesage(widget.chatModel!.id!);
     }
-
-    super.initState();
   }
 
   @override
@@ -193,7 +266,7 @@ class _ChatDetailPageState extends State<ChatPage> {
     return WillPopScope(
       onWillPop: () async {
         // Get.delete<ChatsController>();
-        chatsController.messages.clear();
+        chatsController.stopMessages();
         return true;
       },
       child: Scaffold(
@@ -212,354 +285,392 @@ class _ChatDetailPageState extends State<ChatPage> {
                 isAdmin: false,
                 isFile: true,
               ),
-        body: userCoursesController.currentCourse.value == null &&
-                userController.user.value.admin == false
+        body: _chatIdentityError
             ? Container(
                 alignment: Alignment.center,
-                child: NoData(
-                  title: "انت لست مشترك مع الكابتن",
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    NoData(
+                      title: _chatIdentityErrorMessage,
+                    ),
+                    SizedBox(height: 16),
+                    CustomButton(
+                      onPressed: _refreshChat,
+                      text: "تحديث",
+                      backgroundColor: Theme.of(context).primaryColor,
+                    ),
+                  ],
                 ),
               )
-            : userCoursesController.currentCourse.value != null &&
-                    userCoursesController.currentCourse.value
-                            .data()["status"] !=
-                        3 &&
-                    userCoursesController.currentCourse.value
-                            .data()["status"] !=
-                        4 &&
+            : userCoursesController.currentCourse.value == null &&
                     userController.user.value.admin == false
                 ? Container(
                     alignment: Alignment.center,
                     child: NoData(
-                      title: "يجب ان يكون لديك كورس فعال",
+                      title: "انت لست مشترك مع الكابتن",
                     ),
                   )
                 : userCoursesController.currentCourse.value != null &&
                         userCoursesController.currentCourse.value
-                                .data()["status"] ==
+                                .data()["status"] !=
+                            3 &&
+                        userCoursesController.currentCourse.value
+                                .data()["status"] !=
                             4 &&
                         userController.user.value.admin == false
                     ? Container(
                         alignment: Alignment.center,
                         child: NoData(
-                          title:
-                              "لقد انتهى اشتراكك يرجى تجديد الاشتراك وتمتع بكافة الخدمات",
+                          title: "يجب ان يكون لديك كورس فعال",
                         ),
                       )
-                    : KeyboardVisibilityBuilder(
-                        builder: (context, visibil) {
-                          if (visibil) {
-                            Future.delayed(Duration(milliseconds: 100))
-                                .then((value) {
-                              //  scrollDown();
-                            });
-                          }
-                          return Obx(() => GestureDetector(
-                              onTap: () {
-                                FocusManager.instance.primaryFocus?.unfocus();
-                              },
-                              child: Stack(
-                                children: [
-                                  if (chatsController.messages.length == 0)
-                                    Container(
-                                      height: MediaQuery.of(context).size.width,
-                                      width: MediaQuery.of(context).size.width,
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          Lottie.asset(
-                                              "assets/json/message.json",
-                                              width: 220.sp),
-                                          Text(
-                                            "لا يوجد رسائل",
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleLarge!
-                                                .copyWith(height: 0.1),
+                    : userCoursesController.currentCourse.value != null &&
+                            userCoursesController.currentCourse.value
+                                    .data()["status"] ==
+                                4 &&
+                            userController.user.value.admin == false
+                        ? Container(
+                            alignment: Alignment.center,
+                            child: NoData(
+                              title:
+                                  "لقد انتهى اشتراكك يرجى تجديد الاشتراك وتمتع بكافة الخدمات",
+                            ),
+                          )
+                        : KeyboardVisibilityBuilder(
+                            builder: (context, visibil) {
+                              if (visibil) {
+                                Future.delayed(Duration(milliseconds: 100))
+                                    .then((value) {
+                                  //  scrollDown();
+                                });
+                              }
+                              return Obx(() => GestureDetector(
+                                  onTap: () {
+                                    FocusManager.instance.primaryFocus
+                                        ?.unfocus();
+                                  },
+                                  child: Stack(
+                                    children: [
+                                      if (chatsController.messages.length == 0)
+                                        Container(
+                                          height:
+                                              MediaQuery.of(context).size.width,
+                                          width:
+                                              MediaQuery.of(context).size.width,
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children: [
+                                              Lottie.asset(
+                                                  "assets/json/message.json",
+                                                  width: 220.sp),
+                                              Text(
+                                                "لا يوجد رسائل",
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleLarge!
+                                                    .copyWith(height: 0.1),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                  if (chatsController.messages.length > 0)
-                                    ListView.builder(
-                                      controller: _scrollController,
-                                      reverse: true,
-                                      itemCount:
-                                          chatsController.messages.length,
-                                      padding:
-                                          EdgeInsets.only(top: 10, bottom: 80),
-                                      physics: ScrollPhysics(),
-                                      itemBuilder: (context, index) {
-                                        var timestamp = chatsController.messages[index].date ?? 0; // Should be an int
-var date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+                                        ),
+                                      if (chatsController.messages.isNotEmpty)
+                                        Positioned.fill(
+                                          child: ListView.builder(
+                                            controller: _scrollController,
+                                            reverse: true,
+                                            itemCount:
+                                                chatsController.messages.length,
+                                            padding: EdgeInsets.only(
+                                                top: 10, bottom: 80),
+                                            itemBuilder: (context, index) {
+                                              var timestamp = chatsController
+                                                      .messages[index].date ??
+                                                  0;
+                                              var date = DateTime
+                                                  .fromMillisecondsSinceEpoch(
+                                                      timestamp);
 
-print(DateFormat('yyyy-MM-dd – HH:mm').format(date));
-                                        print(chatsController.messages.length);
-                                        print(chatsController.messages[index].date.toString());
-                                        return ChatBubble(
-                                          chatMessage:
-                                              chatsController.messages[index],
-                                        );
-                                      },
-                                    ),
-                                  Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: Container(
-                                      constraints: new BoxConstraints(
-                                        maxHeight: 120.0,
-                                      ),
-                                      padding: EdgeInsets.only(
-                                          right: 0, bottom: 0, left: 0),
-                                      //  alignment: Alignment.bottomCenter,
-                                      margin: EdgeInsets.only(bottom: 0),
+                                              return ChatBubble(
+                                                chatMessage: chatsController
+                                                    .messages[index],
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      Align(
+                                        alignment: Alignment.bottomCenter,
+                                        child: Container(
+                                          constraints: new BoxConstraints(
+                                            maxHeight: 120.0,
+                                          ),
+                                          padding: EdgeInsets.only(
+                                              right: 0, bottom: 0, left: 0),
+                                          //  alignment: Alignment.bottomCenter,
+                                          margin: EdgeInsets.only(bottom: 0),
 
-                                      width: double.infinity,
-                                      child: Row(
-                                        children: <Widget>[
-                                          Expanded(
-                                              child: Obx(() => Container(
-                                                    child: TextField(
-                                                      controller: message,
-                                                      keyboardType:
-                                                          TextInputType
-                                                              .multiline,
-                                                      minLines: 1,
-                                                      maxLines: 5,
-                                                      onChanged: (v) {
-                                                        setState(() {});
-                                                      },
-                                                      decoration:
-                                                          InputDecoration(
-                                                        prefixIcon: chatsController
-                                                                .loadfile.value
-                                                            ? Padding(
-                                                                padding:
-                                                                    const EdgeInsets
-                                                                        .all(
-                                                                        10),
-                                                                child: Lottie.asset(
-                                                                    "assets/json/uplading.json",
-                                                                    width: 10,
-                                                                    height: 10),
-                                                              )
-                                                            : IconButton(
-                                                                padding: EdgeInsets
-                                                                    .only(
+                                          width: double.infinity,
+                                          child: Row(
+                                            children: <Widget>[
+                                              Expanded(
+                                                  child: Obx(() => Container(
+                                                        child: TextField(
+                                                          controller: message,
+                                                          keyboardType:
+                                                              TextInputType
+                                                                  .multiline,
+                                                          minLines: 1,
+                                                          maxLines: 5,
+                                                          onChanged: (v) {
+                                                            setState(() {});
+                                                          },
+                                                          decoration:
+                                                              InputDecoration(
+                                                            prefixIcon: chatsController
+                                                                    .loadfile
+                                                                    .value
+                                                                ? Padding(
+                                                                    padding:
+                                                                        const EdgeInsets
+                                                                            .all(
+                                                                            10),
+                                                                    child: Lottie.asset(
+                                                                        "assets/json/uplading.json",
+                                                                        width:
+                                                                            10,
+                                                                        height:
+                                                                            10),
+                                                                  )
+                                                                : IconButton(
+                                                                    padding: EdgeInsets.only(
                                                                         right:
                                                                             20,
                                                                         left:
                                                                             8),
-                                                                onPressed: () {
-                                                                  Get.bottomSheet(
-                                                                      Container(
-                                                                    padding:
-                                                                        EdgeInsets.all(
-                                                                            20),
-                                                                    decoration: BoxDecoration(
-                                                                        borderRadius: BorderRadius.only(
-                                                                            topLeft: Radius.circular(
-                                                                                20),
-                                                                            topRight: Radius.circular(
-                                                                                20)),
-                                                                        color: Theme.of(context)
-                                                                            .scaffoldBackgroundColor),
-                                                                    height:
-                                                                        140.h,
-                                                                    child:
-                                                                        Column(
-                                                                      children: [
-                                                                        Container(
-                                                                          width:
-                                                                              100,
-                                                                          height:
-                                                                              3,
-                                                                          decoration: BoxDecoration(
-                                                                              borderRadius: BorderRadius.circular(100),
-                                                                              color: Colors.grey),
-                                                                        ),
-                                                                        SizedBox(
-                                                                          height:
-                                                                              20,
-                                                                        ),
-                                                                        Row(
-                                                                          crossAxisAlignment:
-                                                                              CrossAxisAlignment.center,
+                                                                    onPressed:
+                                                                        () {
+                                                                      Get.bottomSheet(
+                                                                          Container(
+                                                                        padding:
+                                                                            EdgeInsets.all(20),
+                                                                        decoration: BoxDecoration(
+                                                                            borderRadius:
+                                                                                BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                                                                            color: Theme.of(context).scaffoldBackgroundColor),
+                                                                        height:
+                                                                            140.h,
+                                                                        child:
+                                                                            Column(
                                                                           children: [
-                                                                            InkWell(
-                                                                              onTap: () {
-                                                                                pickImage(1);
-                                                                              },
-                                                                              child: Column(
-                                                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                                                children: [
-                                                                                  Container(
-                                                                                    width: 60,
-                                                                                    alignment: Alignment.center,
-                                                                                    child: Icon(
-                                                                                      CupertinoIcons.photo,
-                                                                                      color: Colors.white,
-                                                                                    ),
-                                                                                    height: 60,
-                                                                                    decoration: BoxDecoration(color: Theme.of(context).primaryColor, borderRadius: BorderRadius.circular(100)),
-                                                                                  ),
-                                                                                  SizedBox(
-                                                                                    height: 5,
-                                                                                  ),
-                                                                                  Text(
-                                                                                    "معرض",
-                                                                                    style: Theme.of(context).textTheme.titleMedium,
-                                                                                  )
-                                                                                ],
-                                                                              ),
+                                                                            Container(
+                                                                              width: 100,
+                                                                              height: 3,
+                                                                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(100), color: Colors.grey),
                                                                             ),
                                                                             SizedBox(
-                                                                              width: 20,
+                                                                              height: 20,
                                                                             ),
-                                                                            GestureDetector(
-                                                                              onTap: () {
-                                                                                pickImage(2);
-                                                                              },
-                                                                              child: Column(
-                                                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                                                children: [
-                                                                                  Container(
-                                                                                    width: 60,
-                                                                                    alignment: Alignment.center,
-                                                                                    child: Icon(
-                                                                                      CupertinoIcons.camera,
-                                                                                      color: Colors.white,
-                                                                                    ),
-                                                                                    height: 60,
-                                                                                    decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(100)),
+                                                                            Row(
+                                                                              crossAxisAlignment: CrossAxisAlignment.center,
+                                                                              children: [
+                                                                                InkWell(
+                                                                                  onTap: () {
+                                                                                    pickImage(1);
+                                                                                  },
+                                                                                  child: Column(
+                                                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                                                    children: [
+                                                                                      Container(
+                                                                                        width: 60,
+                                                                                        alignment: Alignment.center,
+                                                                                        child: Icon(
+                                                                                          CupertinoIcons.photo,
+                                                                                          color: Colors.white,
+                                                                                        ),
+                                                                                        height: 60,
+                                                                                        decoration: BoxDecoration(color: Theme.of(context).primaryColor, borderRadius: BorderRadius.circular(100)),
+                                                                                      ),
+                                                                                      SizedBox(
+                                                                                        height: 5,
+                                                                                      ),
+                                                                                      Text(
+                                                                                        "معرض",
+                                                                                        style: Theme.of(context).textTheme.titleMedium,
+                                                                                      )
+                                                                                    ],
                                                                                   ),
-                                                                                  SizedBox(
-                                                                                    height: 5,
+                                                                                ),
+                                                                                SizedBox(
+                                                                                  width: 20,
+                                                                                ),
+                                                                                GestureDetector(
+                                                                                  onTap: () {
+                                                                                    pickImage(2);
+                                                                                  },
+                                                                                  child: Column(
+                                                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                                                    children: [
+                                                                                      Container(
+                                                                                        width: 60,
+                                                                                        alignment: Alignment.center,
+                                                                                        child: Icon(
+                                                                                          CupertinoIcons.camera,
+                                                                                          color: Colors.white,
+                                                                                        ),
+                                                                                        height: 60,
+                                                                                        decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(100)),
+                                                                                      ),
+                                                                                      SizedBox(
+                                                                                        height: 5,
+                                                                                      ),
+                                                                                      Text(
+                                                                                        "كامرة",
+                                                                                        style: Theme.of(context).textTheme.titleMedium,
+                                                                                      )
+                                                                                    ],
                                                                                   ),
-                                                                                  Text(
-                                                                                    "كامرة",
-                                                                                    style: Theme.of(context).textTheme.titleMedium,
-                                                                                  )
-                                                                                ],
-                                                                              ),
-                                                                            ),
-                                                                            SizedBox(
-                                                                              width: 20,
+                                                                                ),
+                                                                                SizedBox(
+                                                                                  width: 20,
+                                                                                ),
+                                                                              ],
                                                                             ),
                                                                           ],
                                                                         ),
-                                                                      ],
-                                                                    ),
-                                                                  ));
-                                                                },
-                                                                icon: Icon(
-                                                                    CupertinoIcons
-                                                                        .camera)),
-                                                        hintText:
-                                                            recordTime != null
+                                                                      ));
+                                                                    },
+                                                                    icon: Icon(
+                                                                        CupertinoIcons
+                                                                            .camera)),
+                                                            hintText: recordTime !=
+                                                                    null
                                                                 ? recordTime
                                                                 : "اكتب رسالتك",
-                                                        contentPadding:
-                                                            EdgeInsets.only(
-                                                                top: 20,
-                                                                bottom: 20,
-                                                                right: 60,
-                                                                left: 60),
-                                                        hintStyle: TextStyle(
-                                                            color: Colors
-                                                                .grey.shade500),
-                                                        border:
-                                                            InputBorder.none,
-                                                      ),
-                                                    ),
-                                                  ))),
-                                        ],
+                                                            contentPadding:
+                                                                EdgeInsets.only(
+                                                                    top: 20,
+                                                                    bottom: 20,
+                                                                    right: 60,
+                                                                    left: 60),
+                                                            hintStyle: TextStyle(
+                                                                color: Colors
+                                                                    .grey
+                                                                    .shade500),
+                                                            border: InputBorder
+                                                                .none,
+                                                          ),
+                                                        ),
+                                                      ))),
+                                            ],
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  Align(
-                                    alignment: Alignment.bottomLeft,
-                                    child: Container(
-                                      padding:
-                                          EdgeInsets.only(left: 20, bottom: 10),
-                                      child: message.text.isEmpty
-                                          ? userController.user.value.admin ==
-                                                  true
-                                              ? FloatingActionButton.small(
-                                                  elevation: 0,
-                                                  backgroundColor:
-                                                      Colors.transparent,
-                                                  onPressed: () {},
-                                                  child: AudioRecorder(
-                                                    onRecrod: (time) {
-                                                      setState(() {
-                                                        recordTime = time;
-                                                      });
-                                                    },
-                                                    onStop: (path) {
-                                                      recordTime = null;
-                                                      if (kDebugMode)
-                                                        print(
-                                                            'Recorded file path: $path');
-                                                      setState(() {
-                                                        audioPath = path;
-                                                        showPlayer = true;
-                                                      });
+                                      Align(
+                                        alignment: Alignment.bottomLeft,
+                                        child: Container(
+                                          padding: EdgeInsets.only(
+                                              left: 20, bottom: 10),
+                                          child: message.text.isEmpty
+                                              ? userController
+                                                          .user.value.admin ==
+                                                      true
+                                                  ? FloatingActionButton.small(
+                                                      elevation: 0,
+                                                      backgroundColor:
+                                                          Colors.transparent,
+                                                      onPressed: () {},
+                                                      child: AudioRecorder(
+                                                        onRecrod: (time) {
+                                                          setState(() {
+                                                            recordTime = time;
+                                                          });
+                                                        },
+                                                        onStop: (path) {
+                                                          recordTime = null;
+                                                          if (kDebugMode)
+                                                            print(
+                                                                'Recorded file path: $path');
+                                                          setState(() {
+                                                            audioPath = path;
+                                                            showPlayer = true;
+                                                          });
 
-                                                      if (widget.chatModel !=
+                                                          if (widget
+                                                                  .chatModel !=
+                                                              null) {
+                                                            chatsController.addChat(
+                                                                widget
+                                                                    .chatModel!
+                                                                    .user,
+                                                                widget
+                                                                    .chatModel!
+                                                                    .user_name,
+                                                                widget
+                                                                    .chatModel!
+                                                                    .user_image,
+                                                                widget
+                                                                    .chatModel!
+                                                                    .user_phone,
+                                                                "voice",
+                                                                widget.chatModel
+                                                                    ?.subscription,
+                                                                message: path);
+                                                          } else {
+                                                            UserModel user =
+                                                                Get.find<
+                                                                        UserController>()
+                                                                    .user
+                                                                    .value;
+                                                            final ownerId =
+                                                                _chatOwnerId();
+                                                            if (ownerId ==
+                                                                null) {
+                                                              return;
+                                                            }
+                                                            chatsController
+                                                                .addChat(
+                                                              ownerId,
+                                                              user.name,
+                                                              user.image,
+                                                              user.phone,
+                                                              "voice",
+                                                              userCoursesController
+                                                                      .currentCourse
+                                                                      .value
+                                                                      .data()[
+                                                                  "subscription"],
+                                                              message: path,
+                                                            );
+                                                          }
+                                                        },
+                                                      ),
+                                                    )
+                                                  : Container()
+                                              : FloatingActionButton.small(
+                                                  onPressed: () {
+                                                    if (message
+                                                            .text.isNotEmpty &&
+                                                        message.text
+                                                                .trim()
+                                                                .length >
+                                                            0) {
+                                                      if (widget.chatModel ==
                                                           null) {
-                                                        chatsController.addChat(
-                                                            widget.chatModel!
-                                                                .user,
-                                                            widget.chatModel!
-                                                                .user_name,
-                                                            widget.chatModel!
-                                                                .user_image,
-                                                            widget.chatModel!
-                                                                .user_phone,
-                                                            "voice",
-                                                            widget.chatModel
-                                                                ?.subscription,
-                                                            message: path);
-                                                      } else {
                                                         UserModel user = Get.find<
                                                                 UserController>()
                                                             .user
                                                             .value;
+                                                        final ownerId =
+                                                            _chatOwnerId();
+                                                        if (ownerId == null) {
+                                                          return;
+                                                        }
                                                         chatsController.addChat(
-                                                          user.id,
-                                                          user.name,
-                                                          user.image,
-                                                          user.phone,
-                                                          "voice",
-                                                          userCoursesController
-                                                                  .currentCourse
-                                                                  .value
-                                                                  .data()[
-                                                              "subscription"],
-                                                          message: path,
-                                                        );
-                                                      }
-                                                    },
-                                                  ),
-                                                )
-                                              : Container()
-                                          : FloatingActionButton.small(
-                                              onPressed: () {
-                                                if (message.text.isNotEmpty &&
-                                                    message.text.trim().length >
-                                                        0) {
-                                                  if (widget.chatModel ==
-                                                      null) {
-                                                    UserModel user = Get.find<
-                                                            UserController>()
-                                                        .user
-                                                        .value;
-                                                    chatsController
-                                                        .addChat(
-                                                            user.id,
+                                                            ownerId,
                                                             user.name,
                                                             user.image,
                                                             user.phone,
@@ -571,38 +682,41 @@ print(DateFormat('yyyy-MM-dd – HH:mm').format(date));
                                                                 "subscription"],
                                                             message:
                                                                 message.text);
-                                                  } else {
-                                                    chatsController.addChat(
-                                                        widget.chatModel!.user,
-                                                        widget.chatModel!
-                                                            .user_name,
-                                                        widget.chatModel!
-                                                            .user_image,
-                                                        widget.chatModel!
-                                                            .user_phone,
-                                                        "text",
-                                                        widget.chatModel
-                                                            ?.subscription,
-                                                        message: message.text);
-                                                  }
-                                                  message.clear();
-                                                }
-                                              },
-                                              child: Icon(
-                                                Icons.send,
-                                                color: Colors.white,
-                                                size: 18,
-                                              ),
-                                              backgroundColor: Theme.of(context)
-                                                  .primaryColor,
-                                              elevation: 0,
-                                            ),
-                                    ),
-                                  )
-                                ],
-                              )));
-                        },
-                      ),
+                                                      } else {
+                                                        chatsController.addChat(
+                                                            widget.chatModel!
+                                                                .user,
+                                                            widget.chatModel!
+                                                                .user_name,
+                                                            widget.chatModel!
+                                                                .user_image,
+                                                            widget.chatModel!
+                                                                .user_phone,
+                                                            "text",
+                                                            widget.chatModel
+                                                                ?.subscription,
+                                                            message:
+                                                                message.text);
+                                                      }
+                                                      message.clear();
+                                                    }
+                                                  },
+                                                  child: Icon(
+                                                    Icons.send,
+                                                    color: Colors.white,
+                                                    size: 18,
+                                                  ),
+                                                  backgroundColor:
+                                                      Theme.of(context)
+                                                          .primaryColor,
+                                                  elevation: 0,
+                                                ),
+                                        ),
+                                      )
+                                    ],
+                                  )));
+                            },
+                          ),
       ),
     );
   }
